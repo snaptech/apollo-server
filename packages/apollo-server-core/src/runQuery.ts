@@ -190,48 +190,65 @@ function doRunQuery(options: QueryOptions): Promise<GraphQLResponse> {
 
   try {
     logFunction({ action: LogAction.execute, step: LogStep.start });
-    return Promise.resolve(
-      execute(
-        options.schema,
-        documentAST,
-        options.rootValue,
-        context,
-        options.variables,
-        options.operationName,
-        options.fieldResolver,
-      ),
-    ).then(result => {
-      logFunction({ action: LogAction.execute, step: LogStep.end });
-      logFunction({ action: LogAction.request, step: LogStep.end });
 
-      let response: GraphQLResponse = {
-        data: result.data,
-      };
+    let preExecute;
+    if (typeof context === 'function') {
+      preExecute = Promise.resolve().then(() => {
+        //support promise or straight call
+        return context({
+          ast: documentAST,
+          args: options.variables,
+          operationName: options.operationName,
+        });
+      });
+    } else {
+      preExecute = Promise.resolve(context);
+    }
 
-      if (result.errors) {
-        response.errors = format(result.errors, options.formatError);
-        if (debug) {
-          result.errors.map(printStackTrace);
-        }
-      }
+    return preExecute
+      .then(dynamicContext => {
+        return execute(
+          options.schema,
+          documentAST,
+          options.rootValue,
+          dynamicContext,
+          options.variables,
+          options.operationName,
+          options.fieldResolver,
+        ).then(result => {
+          logFunction({ action: LogAction.execute, step: LogStep.end });
+          logFunction({ action: LogAction.request, step: LogStep.end });
 
-      if (extensionStack) {
-        extensionStack.executionDidEnd();
-        extensionStack.requestDidEnd();
-        response.extensions = extensionStack.format();
-      }
+          let response: GraphQLResponse = {
+            data: result.data,
+          };
 
-      if (options.formatResponse) {
-        response = options.formatResponse(response, options);
-      }
+          if (result.errors) {
+            response.errors = format(result.errors, options.formatError);
+            if (debug) {
+              result.errors.map(printStackTrace);
+            }
+          }
 
-      return response;
-    });
+          if (extensionStack) {
+            extensionStack.executionDidEnd();
+            extensionStack.requestDidEnd();
+            response.extensions = extensionStack.format();
+          }
+
+          if (options.formatResponse) {
+            response = options.formatResponse(response, options);
+          }
+
+          return response;
+        });
+      })
+      .catch(error => {
+        return Promise.resolve({ errors: format([error]) });
+      });
   } catch (executionError) {
     logFunction({ action: LogAction.execute, step: LogStep.end });
     logFunction({ action: LogAction.request, step: LogStep.end });
-    return Promise.resolve({
-      errors: format([executionError], options.formatError),
-    });
+    return Promise.resolve({ errors: format([executionError]) });
   }
 }

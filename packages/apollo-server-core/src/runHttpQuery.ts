@@ -179,9 +179,7 @@ export async function runHttpQuery(
       }
 
       let context = optionsObject.context || {};
-      if (typeof context === 'function') {
-        context = context();
-      } else if (isBatch) {
+      if (isBatch && typeof context !== 'function') {
         context = Object.assign(
           Object.create(Object.getPrototypeOf(context)),
           context,
