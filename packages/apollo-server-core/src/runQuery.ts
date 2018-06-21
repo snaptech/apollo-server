@@ -11,6 +11,7 @@ import {
   formatError,
   specifiedRules,
   ValidationContext,
+  ExecutionArgs,
 } from 'graphql';
 
 import {
@@ -72,6 +73,9 @@ export interface QueryOptions {
   debug?: boolean;
   tracing?: boolean;
   cacheControl?: boolean | CacheControlExtensionOptions;
+
+  //support using a wrapper/override (for dynamic context, etc)
+  executeFn?: (args: ExecutionArgs) => Promise<ExecutionResult>;
 }
 
 export function runQuery(options: QueryOptions): Promise<GraphQLResponse> {
@@ -190,65 +194,46 @@ function doRunQuery(options: QueryOptions): Promise<GraphQLResponse> {
 
   try {
     logFunction({ action: LogAction.execute, step: LogStep.start });
+    return (options.executeFn || execute)({
+      schema: options.schema,
+      document: documentAST,
+      rootValue: options.rootValue,
+      contextValue: context,
+      variableValues: options.variables,
+      operationName: options.operationName,
+      fieldResolver: options.fieldResolver,
+    }).then(result => {
+      logFunction({ action: LogAction.execute, step: LogStep.end });
+      logFunction({ action: LogAction.request, step: LogStep.end });
 
-    let preExecute;
-    if (typeof context === 'function') {
-      preExecute = Promise.resolve().then(() => {
-        //support promise or straight call
-        return context({
-          ast: documentAST,
-          args: options.variables,
-          operationName: options.operationName,
-        });
-      });
-    } else {
-      preExecute = Promise.resolve(context);
-    }
+      let response: GraphQLResponse = {
+        data: result.data,
+      };
 
-    return preExecute
-      .then(dynamicContext => {
-        return execute(
-          options.schema,
-          documentAST,
-          options.rootValue,
-          dynamicContext,
-          options.variables,
-          options.operationName,
-          options.fieldResolver,
-        ).then(result => {
-          logFunction({ action: LogAction.execute, step: LogStep.end });
-          logFunction({ action: LogAction.request, step: LogStep.end });
+      if (result.errors) {
+        response.errors = format(result.errors, options.formatError);
+        if (debug) {
+          result.errors.map(printStackTrace);
+        }
+      }
 
-          let response: GraphQLResponse = {
-            data: result.data,
-          };
+      if (extensionStack) {
+        extensionStack.executionDidEnd();
+        extensionStack.requestDidEnd();
+        response.extensions = extensionStack.format();
+      }
 
-          if (result.errors) {
-            response.errors = format(result.errors, options.formatError);
-            if (debug) {
-              result.errors.map(printStackTrace);
-            }
-          }
+      if (options.formatResponse) {
+        response = options.formatResponse(response, options);
+      }
 
-          if (extensionStack) {
-            extensionStack.executionDidEnd();
-            extensionStack.requestDidEnd();
-            response.extensions = extensionStack.format();
-          }
-
-          if (options.formatResponse) {
-            response = options.formatResponse(response, options);
-          }
-
-          return response;
-        });
-      })
-      .catch(error => {
-        return Promise.resolve({ errors: format([error]) });
-      });
+      return response;
+    });
   } catch (executionError) {
     logFunction({ action: LogAction.execute, step: LogStep.end });
     logFunction({ action: LogAction.request, step: LogStep.end });
-    return Promise.resolve({ errors: format([executionError]) });
+    return Promise.resolve({
+      errors: format([executionError], options.formatError),
+    });
   }
 }

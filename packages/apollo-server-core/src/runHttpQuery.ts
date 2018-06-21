@@ -179,7 +179,9 @@ export async function runHttpQuery(
       }
 
       let context = optionsObject.context || {};
-      if (isBatch && typeof context !== 'function') {
+      if (typeof context === 'function') {
+        context = context();
+      } else if (isBatch) {
         context = Object.assign(
           Object.create(Object.getPrototypeOf(context)),
           context,
@@ -201,6 +203,7 @@ export async function runHttpQuery(
         debug: optionsObject.debug,
         tracing: optionsObject.tracing,
         cacheControl: optionsObject.cacheControl,
+        executeFn: optionsObject.executeFn,
       };
 
       if (optionsObject.formatParams) {

@@ -2,6 +2,8 @@ import {
   GraphQLSchema,
   ValidationContext,
   GraphQLFieldResolver,
+  ExecutionArgs,
+  ExecutionResult,
 } from 'graphql';
 import { LogFunction } from './runQuery';
 import { GraphQLExtension } from 'graphql-extensions';
@@ -20,7 +22,7 @@ import { CacheControlExtensionOptions } from 'apollo-cache-control';
  * - (optional) formatResponse: a function applied to each graphQL execution result
  * - (optional) fieldResolver: a custom default field resolver
  * - (optional) debug: a boolean that will print additional debug logging if execution errors occur
- *
+ * - (optional) executeFn: a function adhering to graphql definition to allow dynamic context, ect.
  */
 export interface GraphQLServerOptions<TContext = any> {
   schema: GraphQLSchema;
@@ -35,6 +37,8 @@ export interface GraphQLServerOptions<TContext = any> {
   debug?: boolean;
   tracing?: boolean;
   cacheControl?: boolean | CacheControlExtensionOptions;
+  //support using a wrapper/override (for dynamic context, etc)
+  executeFn?: (args: ExecutionArgs) => Promise<ExecutionResult>;
 }
 
 export default GraphQLServerOptions;
